@@ -23,6 +23,7 @@ CHUNK_BYTES = SAMPLE_RATE * 2 * CHUNK_MS // 1000  # 16-bit mono PCM: 1,600 bytes
 REPLAY_SECONDS = 5        # audio kept while offline; anything older is dropped
 CATCH_UP_SPEED = 1.2      # backlog send rate, under the ~1.25x real-time throttle
 TRANSLATION_WAIT_S = 2.0  # fall back to source text if no translation arrives
+HEARTBEAT_TIMEOUT_S = 15  # no message (Heartbeat arrives every 5 s) for this long = dead link
 
 PROMPT = (
     "Earlier in the conversation: {{history_3}}\n\n"
@@ -38,6 +39,7 @@ CONNECTION_PARAMS = {
     "sample_rate": SAMPLE_RATE,
     "speech_model": "universal-3-6-pro",
     "llm_gateway": json.dumps(LLM_GATEWAY_CONFIG),
+    "session_heartbeat": "true",  # server sends a Heartbeat message every 5 s
 }
 API_ENDPOINT = "wss://streaming.assemblyai.com/v3/ws?" + urlencode(CONNECTION_PARAMS)
 
@@ -123,15 +125,18 @@ class Relay:
         self.lock = threading.Lock()
         self.last_error = None
         self.ended = False
+        self.last_heard = time.monotonic()
 
     # --- WebSocket callbacks ---
     def on_open(self, ws):
+        self.last_heard = time.monotonic()
         self.display.show_status("live")
         threading.Thread(target=self.send_audio, args=(ws,), daemon=True).start()
 
     def on_message(self, ws, message):
         data = json.loads(message)
         kind = data.get("type")
+        self.last_heard = time.monotonic()  # any message, Heartbeat included
 
         if kind == "Begin":
             self.session_id = data["id"]
@@ -180,6 +185,9 @@ class Relay:
     def send_audio(self, ws):
         while ws.sock and ws.sock.connected:
             self.flush_untranslated()
+            if time.monotonic() - self.last_heard > HEARTBEAT_TIMEOUT_S:
+                ws.close()  # silent link: reconnect instead of waiting on TCP
+                return
             chunk, backlog = self.buffer.pop()
             if chunk is None:
                 if self.buffer.finished:
@@ -223,7 +231,7 @@ def main(wav_path):
             on_close=relay.on_close,
         )
         started = time.monotonic()
-        ws.run_forever(ping_interval=15, ping_timeout=10)
+        ws.run_forever()
 
         retry, wait = relay.should_retry()
         if not retry:

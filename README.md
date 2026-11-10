@@ -10,7 +10,7 @@ This is the companion repo for the tutorial: [How to build live translation into
 
 | File | What it does |
 |------|--------------|
-| `relay.py` | The relay from the tutorial: caption wrapping and paging, untranslated fallback after 2 seconds, a 5-second replay buffer with paced catch-up, `1008` handling and reconnect with backoff. Plays a WAV file in real time as the mock device |
+| `relay.py` | The relay from the tutorial: caption wrapping and paging, untranslated fallback after 2 seconds, a 5-second replay buffer with paced catch-up, `1008` handling, heartbeat-based dead-link detection (`session_heartbeat=true`) and reconnect with backoff. Plays a WAV file in real time as the mock device |
 | `mic_relay.py` | Optional: runs the same relay with your microphone as the mock device, for a set number of seconds |
 | `requirements.txt` | `websocket-client`, plus `pyaudio` for the mic option |
 | `.env.example` | The one environment variable the scripts read |
